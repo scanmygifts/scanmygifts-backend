@@ -1,10 +1,10 @@
 import express from 'express';
 import { z } from 'zod';
+import twilio from 'twilio';
+import asyncHandler from 'express-async-handler';
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
-
-// Development mode helper
-const isDevelopment = process.env.NODE_ENV === 'development';
 
 // Validation schemas
 const sendCodeSchema = z.object({
@@ -16,37 +16,41 @@ const verifyCodeSchema = z.object({
   code: z.string().length(6)
 });
 
-// Lazy initialization of Twilio client
-const getTwilioClient = () => {
-  // Only import and initialize Twilio if we have valid credentials
+// Initialize Twilio client
+const initTwilioClient = () => {
   if (
     process.env.TWILIO_ACCOUNT_SID?.startsWith('AC') &&
     process.env.TWILIO_AUTH_TOKEN &&
     process.env.TWILIO_PHONE_NUMBER
   ) {
-    try {
-      const twilio = require('twilio');
-      return twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
-    } catch (error) {
-      console.error('Failed to initialize Twilio client:', error);
-      return null;
-    }
+    return twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
   }
   return null;
 };
 
 // Send verification code
-router.post('/send', async (req, res) => {
+router.post('/send', asyncHandler(async (req, res) => {
+  const { phoneNumber } = sendCodeSchema.parse(req.body);
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
   try {
-    const { phoneNumber } = sendCodeSchema.parse(req.body);
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
+    // Store verification code in Supabase
+    const { error: dbError } = await supabase
+      .from('verification_codes')
+      .insert([{
+        phone_number: phoneNumber,
+        code: verificationCode,
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes expiration
+      }]);
+
+    if (dbError) throw dbError;
+
     if (isDevelopment) {
-      // Development mode: return code directly
-      console.log('Development mode: Skipping SMS send');
+      // In development, return the code directly
       return res.json({ 
         success: true, 
         code: verificationCode,
@@ -54,15 +58,10 @@ router.post('/send', async (req, res) => {
       });
     }
 
-    // Production mode: attempt to send SMS
-    const twilioClient = getTwilioClient();
+    // In production, send SMS via Twilio
+    const twilioClient = initTwilioClient();
     if (!twilioClient) {
-      console.warn('Twilio not configured, falling back to development mode');
-      return res.json({ 
-        success: true, 
-        code: verificationCode,
-        mode: 'development-fallback'
-      });
+      throw new Error('Twilio not configured');
     }
 
     await twilioClient.messages.create({
@@ -73,55 +72,50 @@ router.post('/send', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ error: 'Invalid input', details: error.errors });
-    } else {
-      console.error('SMS error:', error);
-      res.status(500).json({ 
-        error: 'Failed to send verification code',
-        details: isDevelopment ? error.message : undefined
-      });
-    }
+    console.error('Verification error:', error);
+    res.status(500).json({ 
+      error: 'Failed to send verification code',
+      details: isDevelopment ? error.message : undefined
+    });
   }
-});
+}));
 
 // Verify code
-router.post('/verify', async (req, res) => {
+router.post('/verify', asyncHandler(async (req, res) => {
+  const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
+  
   try {
-    const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
-    
-    if (isDevelopment || !getTwilioClient()) {
-      // In development or without Twilio, accept any valid format code
-      if (code.length === 6 && /^\d+$/.test(code)) {
-        return res.json({ success: true });
-      }
-      return res.status(400).json({ error: 'Invalid verification code' });
-    }
+    const { data, error } = await supabase
+      .from('verification_codes')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .eq('code', code)
+      .gte('expires_at', new Date().toISOString())
+      .single();
 
-    // In production, verify against stored code
-    // TODO: Implement proper code verification storage and checking
-    res.json({ success: true });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ error: 'Invalid input', details: error.errors });
-    } else {
-      res.status(500).json({ 
-        error: 'Verification failed',
-        details: isDevelopment ? error.message : undefined
+    if (error) throw error;
+
+    if (!data) {
+      return res.status(400).json({ 
+        error: 'Invalid or expired verification code' 
       });
     }
-  }
-});
 
-// Health check endpoint that includes Twilio status
-router.get('/health', (req, res) => {
-  const twilioConfigured = Boolean(getTwilioClient());
-  
-  res.json({
-    status: 'ok',
-    twilioConfigured,
-    mode: isDevelopment ? 'development' : 'production'
-  });
-});
+    // Delete the used code
+    await supabase
+      .from('verification_codes')
+      .delete()
+      .eq('phone_number', phoneNumber)
+      .eq('code', code);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({ 
+      error: 'Verification failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+}));
 
 export { router as verificationRouter };
