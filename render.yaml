@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: scan-my-gifts
+    name: scan-my-gifts-api
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -11,9 +11,18 @@ services:
         value: 3000
       - key: OPENAI_API_KEY
         sync: false
+      - key: CORS_ORIGINS
+        value: https://your-frontend-url.com
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
       - key: TWILIO_PHONE_NUMBER
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+    autoDeploy: true
