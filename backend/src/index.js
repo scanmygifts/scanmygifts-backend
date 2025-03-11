@@ -7,11 +7,20 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs';
+import { createClient } from "@supabase/supabase-js";
 
-// Import Routes
-import { imageRouter } from './routes/image.js';
-import { healthRouter } from './routes/health.js';
-import { verificationRouter } from './routes/verification.js';
+// Load environment variables
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+// Validate Supabase Credentials
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.error("❌ Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_KEY.");
+    process.exit(1); // Stop the server from starting
+}
+
+// Initialize Supabase Client
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -49,9 +58,18 @@ app.use(cookieParser());
 const checkRouteFile = (path) => fs.existsSync(path);
 
 // Load Routes Only If They Exist
-if (checkRouteFile('./routes/image.js')) app.use('/api/image', imageRouter);
-if (checkRouteFile('./routes/health.js')) app.use('/api/health', healthRouter);
-if (checkRouteFile('./routes/verification.js')) app.use('/api/verification', verificationRouter);
+if (checkRouteFile('./routes/image.js')) {
+    const { imageRouter } = await import('./routes/image.js');
+    app.use('/api/image', imageRouter);
+}
+if (checkRouteFile('./routes/health.js')) {
+    const { healthRouter } = await import('./routes/health.js');
+    app.use('/api/health', healthRouter);
+}
+if (checkRouteFile('./routes/verification.js')) {
+    const { verificationRouter } = await import('./routes/verification.js');
+    app.use('/api/verification', verificationRouter);
+}
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
