@@ -1,29 +1,41 @@
-# ScanMyGifts Backend API
+# ScanMyGifts
 
-Backend service for the ScanMyGifts application, handling SMS verification and image analysis.
+A web application that allows users to send and receive gifts with personalized messages through an innovative scanning system.
 
-## Environment Variables
+## Features
 
-Copy `.env.example` to `.env` and fill in your values:
+- Gift scanning with image recognition
+- SMS verification for secure access
+- Voice and video message recording
+- Real-time gift matching
+- Secure payment processing
 
-```env
-# Server
-PORT=3000
-NODE_ENV=development
+## Tech Stack
 
-# CORS
-CORS_ORIGINS=http://localhost:5173,https://scanmygifts.netlify.app
-
-# Twilio
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=your_phone_number
-
-# OpenAI
-OPENAI_API_KEY=your_openai_api_key
-```
+- React with TypeScript
+- Tailwind CSS for styling
+- Supabase for database and authentication
+- Vite for development and building
 
 ## Development
+
+### Environment Setup
+
+1. Create a `.env` file in the root directory:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Update the environment variables in `.env`:
+   - Get your Supabase credentials from your Supabase project dashboard
+   - For the backend API URL:
+     1. Go to your Render dashboard
+     2. Select your deployed backend service
+     3. Copy the URL from the "URL" field (e.g., `https://your-app-name.onrender.com`)
+     4. Add `/api` at the end of the URL
+     5. Paste it as the value for `VITE_API_URL`
+
+### Running the Application
 
 ```bash
 # Install dependencies
@@ -32,6 +44,10 @@ npm install
 # Start development server
 npm run dev
 
-# Start production server
-npm start
+# Build for production
+npm run build
 ```
+
+## License
+
+MIT
