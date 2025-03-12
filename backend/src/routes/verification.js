@@ -110,13 +110,13 @@ router.post(
     const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
 
     try {
-      // ✅ Check for valid verification code
+      // ✅ Step 1: Check for valid OTP
       const { data: verificationData, error: verificationError } = await supabase
         .from("verification_codes")
         .select("*")
         .eq("phone_number", phoneNumber)
         .eq("code", code)
-        .gte("expires_at", new Date().toISOString())
+        .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is not expired
         .maybeSingle();
 
       if (verificationError) {
@@ -134,43 +134,16 @@ router.post(
         });
       }
 
-      // ✅ Delete the OTP after successful verification
-      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
-      // ✅ Check if the user already exists
-      const { data: existingUser, error: userError } = await supabase
-        .from("users")
-        .select("id, first_name")
+      // ✅ Step 2: Delete OTP after successful verification
+      await supabase
+        .from("verification_codes")
+        .delete()
         .eq("phone_number", phoneNumber)
-        .maybeSingle();
+        .eq("code", code);
 
-      if (userError) {
-        console.error("User query error:", userError);
-      }
-
-      // ✅ If user does NOT exist, insert into `users` table
-      if (!existingUser) {
-        const { error: insertError } = await supabase.from("users").insert([
-          {
-            phone_number: phoneNumber,
-            phone_verified: true, // ✅ Mark user as verified
-          },
-        ]);
-
-        if (insertError) {
-          console.error("User insert error:", insertError);
-          return res.status(500).json({
-            success: false,
-            error: "Failed to create user",
-          });
-        }
-
-        console.log("✅ New user created:", phoneNumber);
-      }
-
+      // ✅ Step 3: Return success response
       res.json({
         success: true,
-        user: existingUser || null, // ✅ Return user if exists
       });
     } catch (error) {
       console.error("Verification error:", error);
