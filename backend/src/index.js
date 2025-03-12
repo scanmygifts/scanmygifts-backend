@@ -31,7 +31,7 @@ app.set('trust proxy', 1);
 // Security Middleware
 app.use(helmet());
 const allowedOrigins = [
-  "http://localhost:5173", // ✅ Allow local development frontend
+  "http://localhost:4001", // ✅ Allow local development frontend
   "https://your-frontend-site.netlify.app" // ✅ Replace with your actual deployed frontend URL
 ];
 
