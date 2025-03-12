@@ -44,4 +44,4 @@ router.post('/analyze', asyncHandler(async (req, res) => {
   res.json({ description });
 }));
 
-export { router as imageRouter };
+export default router;
