@@ -6,6 +6,10 @@ import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
+router.get("/", (req, res) => {
+  res.json({ success: true, message: "Verification route is working!" });
+});
+
 // Validation schemas
 const sendCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15)
