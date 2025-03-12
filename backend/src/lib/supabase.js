@@ -1,12 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Load Supabase credentials from environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_KEY; // ✅ Use correct variable from Render
 
-// Throw an error if credentials are missing
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error("❌ Missing Supabase credentials. Ensure SUPABASE_URL and SUPABASE_KEY are set in Render.");
+    console.error("❌ Missing Supabase credentials in backend");
     throw new Error("Missing Supabase credentials");
 }
 
