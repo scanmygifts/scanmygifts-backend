@@ -14,7 +14,11 @@ const sendCodeSchema = z.object({
 const verifyCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
   code: z.string().length(6),
-  firstName: z.string().optional(),
+});
+
+const updateUserSchema = z.object({
+  phoneNumber: z.string().min(10).max(15),
+  firstName: z.string().min(1),
 });
 
 // Initialize Twilio client
@@ -46,66 +50,46 @@ router.post(
           phone_number: phoneNumber,
           otp_code: verificationCode,
           expires_at: expiresAt,
+          created_at: new Date().toISOString(),
         },
       ], { onConflict: "phone_number" });
 
       if (dbError) {
         console.error("Database error:", dbError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to store verification code",
-        });
+        return res.status(500).json({ success: false, error: "Failed to store verification code" });
       }
 
       // ✅ In development, return the code directly
       if (isDevelopment) {
         console.log(`Development mode - Verification code for ${phoneNumber}: ${verificationCode}`);
-        return res.json({
-          success: true,
-          code: verificationCode,
-          mode: "development",
-        });
+        return res.json({ success: true, code: verificationCode, mode: "development" });
       }
 
       // ✅ In production, send SMS via Twilio
       const twilioClient = initTwilioClient();
       if (!twilioClient) {
-        return res.status(503).json({
-          success: false,
-          error: "SMS service not available",
-        });
+        return res.status(503).json({ success: false, error: "SMS service not available" });
       }
 
-      try {
-        await twilioClient.messages.create({
-          body: `Your ScanMyGifts verification code is: ${verificationCode}`,
-          to: phoneNumber,
-          from: process.env.TWILIO_PHONE_NUMBER,
-        });
+      await twilioClient.messages.create({
+        body: `Your ScanMyGifts verification code is: ${verificationCode}`,
+        to: phoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+      });
 
-        res.json({ success: true });
-      } catch (twilioError) {
-        console.error("Twilio error:", twilioError);
-        res.status(400).json({
-          success: false,
-          error: twilioError.message || "Failed to send SMS",
-        });
-      }
+      res.json({ success: true });
     } catch (error) {
       console.error("Verification error:", error);
-      res.status(500).json({
-        success: false,
-        error: isDevelopment ? error.message : "Failed to send verification code",
-      });
+      res.status(500).json({ success: false, error: "Failed to send verification code" });
     }
   })
 );
 
-// **✅ Verify OTP and Create/Update User**
+// **✅ Verify OTP and Insert/Update User**
 router.post(
   "/verify",
   asyncHandler(async (req, res) => {
-    const { phoneNumber, code, firstName } = verifyCodeSchema.parse(req.body);
+    const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
 
     try {
       // ✅ Step 1: Check for valid OTP
@@ -114,58 +98,53 @@ router.post(
         .select("*")
         .eq("phone_number", phoneNumber)
         .eq("otp_code", code)
-        .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is not expired
+        .gte("expires_at", new Date().toISOString())
         .maybeSingle();
 
-      if (verificationError) {
-        console.error("Verification query error:", verificationError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to verify code",
-        });
-      }
-
-      if (!verificationData) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid or expired verification code",
-        });
+      if (verificationError || !verificationData) {
+        return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
       }
 
       // ✅ Step 2: Delete OTP after successful verification
-      await supabase
-        .from("verification_codes")
-        .delete()
-        .eq("phone_number", phoneNumber)
-        .eq("otp_code", code);
+      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
-      // ✅ Step 3: Upsert user record only if firstName is provided
-      if (firstName) {
-        const { error: upsertError } = await supabase.from("users").upsert([
-          {
-            phone_number: phoneNumber,
-            first_name: firstName,
-            phone_verified: true,
-          },
-        ], { onConflict: "phone_number" });
+      // ✅ Step 3: Upsert user record with `phone_verified`
+      const { error: upsertError } = await supabase.from("users").upsert([
+        {
+          phone_number: phoneNumber,
+          phone_verified: true,
+        },
+      ], { onConflict: "phone_number" });
 
-        if (upsertError) {
-          console.error("User upsert error:", upsertError);
-          return res.status(500).json({
-            success: false,
-            error: "Failed to create/update user",
-          });
-        }
+      if (upsertError) {
+        return res.status(500).json({ success: false, error: "Failed to update user verification status" });
       }
 
-      // ✅ Return success response
       res.json({ success: true });
     } catch (error) {
       console.error("Verification error:", error);
-      res.status(500).json({
-        success: false,
-        error: process.env.NODE_ENV === "development" ? error.message : "Verification failed",
-      });
+      res.status(500).json({ success: false, error: "Verification failed" });
+    }
+  })
+);
+
+// **✅ Update User with First Name**
+router.post(
+  "/update-user",
+  asyncHandler(async (req, res) => {
+    const { phoneNumber, firstName } = updateUserSchema.parse(req.body);
+
+    try {
+      const { error: updateError } = await supabase.from("users").update({ first_name: firstName }).eq("phone_number", phoneNumber);
+
+      if (updateError) {
+        return res.status(500).json({ success: false, error: "Failed to update user name" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("User update error:", error);
+      res.status(500).json({ success: false, error: "User update failed" });
     }
   })
 );
