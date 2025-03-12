@@ -42,6 +42,7 @@ router.post(
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // OTP expires in 10 minutes
     const createdAt = new Date().toISOString(); // ✅ Ensure created_at is explicitly set
+    const isDevelopment = process.env.NODE_ENV === "development";
 
     try {
       // ✅ Store new verification code in Supabase
@@ -66,18 +67,6 @@ router.post(
         });
       }
 
-      res.json({ success: true });
-    } catch (error) {
-      console.error("❌ Verification Error:", error);
-      res.status(500).json({
-        success: false,
-        error: "Failed to send verification code",
-        details: error.message,
-      });
-    }
-  })
-);
-      // ✅ In development, return the code directly
       if (isDevelopment) {
         console.log(`Development mode - Verification code for ${phoneNumber}: ${verificationCode}`);
         return res.json({ success: true, code: verificationCode, mode: "development" });
@@ -97,8 +86,8 @@ router.post(
 
       res.json({ success: true });
     } catch (error) {
-      console.error("Verification error:", error);
-      res.status(500).json({ success: false, error: "Failed to send verification code" });
+      console.error("❌ Verification Error:", error);
+      res.status(500).json({ success: false, error: "Failed to send verification code", details: error.message });
     }
   })
 );
@@ -142,27 +131,6 @@ router.post(
     } catch (error) {
       console.error("Verification error:", error);
       res.status(500).json({ success: false, error: "Verification failed" });
-    }
-  })
-);
-
-// **✅ Update User with First Name**
-router.post(
-  "/update-user",
-  asyncHandler(async (req, res) => {
-    const { phoneNumber, firstName } = updateUserSchema.parse(req.body);
-
-    try {
-      const { error: updateError } = await supabase.from("users").update({ first_name: firstName }).eq("phone_number", phoneNumber);
-
-      if (updateError) {
-        return res.status(500).json({ success: false, error: "Failed to update user name" });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("User update error:", error);
-      res.status(500).json({ success: false, error: "User update failed" });
     }
   })
 );
