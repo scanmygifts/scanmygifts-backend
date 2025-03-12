@@ -36,7 +36,9 @@ router.post('/send', asyncHandler(async (req, res) => {
   const { phoneNumber } = sendCodeSchema.parse(req.body);
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
   const isDevelopment = process.env.NODE_ENV === 'development';
-  
+
+  console.log(`📲 Sending verification code to ${phoneNumber}`);
+
   try {
     // Store verification code in Supabase
     const { error: dbError } = await supabase
@@ -50,7 +52,7 @@ router.post('/send', asyncHandler(async (req, res) => {
     if (dbError) throw dbError;
 
     if (isDevelopment) {
-      // In development, return the code directly
+      console.log(`🛠️ Development mode: Returning code ${verificationCode}`);
       return res.json({ 
         success: true, 
         code: verificationCode,
@@ -61,7 +63,8 @@ router.post('/send', asyncHandler(async (req, res) => {
     // In production, send SMS via Twilio
     const twilioClient = initTwilioClient();
     if (!twilioClient) {
-      throw new Error('Twilio not configured');
+      console.error('🚨 Twilio configuration missing');
+      return res.status(500).json({ error: 'Twilio not configured' });
     }
 
     await twilioClient.messages.create({
@@ -70,9 +73,10 @@ router.post('/send', asyncHandler(async (req, res) => {
       from: process.env.TWILIO_PHONE_NUMBER
     });
 
+    console.log(`✅ Verification code sent to ${phoneNumber}`);
     res.json({ success: true });
   } catch (error) {
-    console.error('Verification error:', error);
+    console.error('❌ Verification error:', error);
     res.status(500).json({ 
       error: 'Failed to send verification code',
       details: isDevelopment ? error.message : undefined
@@ -83,34 +87,45 @@ router.post('/send', asyncHandler(async (req, res) => {
 // Verify code
 router.post('/verify', asyncHandler(async (req, res) => {
   const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
-  
+
+  console.log(`🔍 Verifying code for ${phoneNumber}`);
+
   try {
     const { data, error } = await supabase
       .from('verification_codes')
       .select('*')
       .eq('phone_number', phoneNumber)
       .eq('code', code)
-      .gte('expires_at', new Date().toISOString())
+      .gte('expires_at', new Date().toISOString()) // Ensure the code isn't expired
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('⚠️ Database error during verification:', error);
+      throw error;
+    }
 
     if (!data) {
+      console.warn(`⚠️ Invalid or expired code for ${phoneNumber}`);
       return res.status(400).json({ 
         error: 'Invalid or expired verification code' 
       });
     }
 
     // Delete the used code
-    await supabase
+    const { error: deleteError } = await supabase
       .from('verification_codes')
       .delete()
       .eq('phone_number', phoneNumber)
       .eq('code', code);
 
+    if (deleteError) {
+      console.error('⚠️ Error deleting used verification code:', deleteError);
+    }
+
+    console.log(`✅ Verification successful for ${phoneNumber}`);
     res.json({ success: true });
   } catch (error) {
-    console.error('Verification error:', error);
+    console.error('❌ Verification failed:', error);
     res.status(500).json({ 
       error: 'Verification failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
