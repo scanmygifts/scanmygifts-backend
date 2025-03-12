@@ -41,24 +41,42 @@ router.post(
     const { phoneNumber } = sendCodeSchema.parse(req.body);
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // OTP expires in 10 minutes
-    const isDevelopment = process.env.NODE_ENV === "development";
+    const createdAt = new Date().toISOString(); // ✅ Ensure created_at is explicitly set
 
     try {
       // ✅ Store new verification code in Supabase
-      const { error: dbError } = await supabase.from("verification_codes").upsert([
-        {
-          phone_number: phoneNumber,
-          otp_code: verificationCode,
-          expires_at: expiresAt,
-          created_at: new Date().toISOString(),
-        },
-      ], { onConflict: "phone_number" });
+      const { error: dbError } = await supabase.from("verification_codes").upsert(
+        [
+          {
+            phone_number: phoneNumber,
+            otp_code: verificationCode,
+            expires_at: expiresAt,
+            created_at: createdAt, // ✅ Explicitly setting created_at
+          },
+        ],
+        { onConflict: "phone_number" }
+      );
 
       if (dbError) {
-        console.error("Database error:", dbError);
-        return res.status(500).json({ success: false, error: "Failed to store verification code" });
+        console.error("❌ Supabase Insert Error:", dbError);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to store verification code",
+          details: dbError.message, // ✅ Log detailed error
+        });
       }
 
+      res.json({ success: true });
+    } catch (error) {
+      console.error("❌ Verification Error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to send verification code",
+        details: error.message,
+      });
+    }
+  })
+);
       // ✅ In development, return the code directly
       if (isDevelopment) {
         console.log(`Development mode - Verification code for ${phoneNumber}: ${verificationCode}`);
