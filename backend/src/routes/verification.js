@@ -103,7 +103,7 @@ router.post(
   })
 );
 
-// **✅ Verify OTP and Create User in Supabase**
+// **✅ Verify OTP (Only Marks Success, No User Insert Yet)**
 router.post(
   "/verify",
   asyncHandler(async (req, res) => {
@@ -141,7 +141,7 @@ router.post(
         .eq("phone_number", phoneNumber)
         .eq("code", code);
 
-      // ✅ Step 3: Return success response
+      // ✅ Step 3: Return success response (User creation happens later when name is provided)
       res.json({
         success: true,
       });
