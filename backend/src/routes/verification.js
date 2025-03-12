@@ -14,11 +14,7 @@ const sendCodeSchema = z.object({
 const verifyCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
   code: z.string().length(6),
-});
-
-const createUserSchema = z.object({
-  phoneNumber: z.string().min(10).max(15),
-  firstName: z.string().min(1),
+  firstName: z.string().optional(),
 });
 
 // Initialize Twilio client
@@ -105,11 +101,11 @@ router.post(
   })
 );
 
-// **✅ Verify OTP Only**
+// **✅ Verify OTP and Create/Update User**
 router.post(
   "/verify",
   asyncHandler(async (req, res) => {
-    const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
+    const { phoneNumber, code, firstName } = verifyCodeSchema.parse(req.body);
 
     try {
       // ✅ Step 1: Check for valid OTP
@@ -143,6 +139,25 @@ router.post(
         .eq("phone_number", phoneNumber)
         .eq("otp_code", code);
 
+      // ✅ Step 3: Upsert user record only if firstName is provided
+      if (firstName) {
+        const { error: upsertError } = await supabase.from("users").upsert([
+          {
+            phone_number: phoneNumber,
+            first_name: firstName,
+            phone_verified: true,
+          },
+        ], { onConflict: "phone_number" });
+
+        if (upsertError) {
+          console.error("User upsert error:", upsertError);
+          return res.status(500).json({
+            success: false,
+            error: "Failed to create/update user",
+          });
+        }
+      }
+
       // ✅ Return success response
       res.json({ success: true });
     } catch (error) {
@@ -150,40 +165,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: process.env.NODE_ENV === "development" ? error.message : "Verification failed",
-      });
-    }
-  })
-);
-
-// **✅ Create User After Verification and First Name Input**
-router.post(
-  "/create-user",
-  asyncHandler(async (req, res) => {
-    const { phoneNumber, firstName } = createUserSchema.parse(req.body);
-
-    try {
-      const { error: insertError } = await supabase.from("users").insert([
-        {
-          phone_number: phoneNumber,
-          first_name: firstName,
-          phone_verified: true,
-        },
-      ]);
-
-      if (insertError) {
-        console.error("User insert error:", insertError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to create user",
-        });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("User creation error:", error);
-      res.status(500).json({
-        success: false,
-        error: "User creation failed",
       });
     }
   })
