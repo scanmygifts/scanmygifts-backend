@@ -6,19 +6,9 @@ import { supabase } from "../lib/supabase.js";
 
 const router = express.Router();
 
-// Validation schemas
+// Validation schema for sending verification code
 const sendCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
-});
-
-const verifyCodeSchema = z.object({
-  phoneNumber: z.string().min(10).max(15),
-  code: z.string().length(6),
-});
-
-const updateUserSchema = z.object({
-  phoneNumber: z.string().min(10).max(15),
-  firstName: z.string().min(1),
 });
 
 // Initialize Twilio client
@@ -41,7 +31,7 @@ router.post(
     const { phoneNumber } = sendCodeSchema.parse(req.body);
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // OTP expires in 10 minutes
-    const createdAt = new Date().toISOString(); // ✅ Ensure created_at is explicitly set
+    const createdAt = new Date().toISOString();
     const isDevelopment = process.env.NODE_ENV === "development";
 
     try {
@@ -52,7 +42,7 @@ router.post(
             phone_number: phoneNumber,
             otp_code: verificationCode,
             expires_at: expiresAt,
-            created_at: createdAt, // ✅ Explicitly setting created_at
+            created_at: createdAt,
           },
         ],
         { onConflict: "phone_number" }
@@ -60,11 +50,7 @@ router.post(
 
       if (dbError) {
         console.error("❌ Supabase Insert Error:", dbError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to store verification code",
-          details: dbError.message, // ✅ Log detailed error
-        });
+        return res.status(500).json({ success: false, error: "Failed to store verification code", details: dbError.message });
       }
 
       if (isDevelopment) {
@@ -88,49 +74,6 @@ router.post(
     } catch (error) {
       console.error("❌ Verification Error:", error);
       res.status(500).json({ success: false, error: "Failed to send verification code", details: error.message });
-    }
-  })
-);
-
-// **✅ Verify OTP and Insert/Update User**
-router.post(
-  "/verify",
-  asyncHandler(async (req, res) => {
-    const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
-
-    try {
-      // ✅ Step 1: Check for valid OTP
-      const { data: verificationData, error: verificationError } = await supabase
-        .from("verification_codes")
-        .select("*")
-        .eq("phone_number", phoneNumber)
-        .eq("otp_code", code)
-        .gte("expires_at", new Date().toISOString())
-        .maybeSingle();
-
-      if (verificationError || !verificationData) {
-        return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
-      }
-
-      // ✅ Step 2: Delete OTP after successful verification
-      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
-      // ✅ Step 3: Upsert user record with `phone_verified`
-      const { error: upsertError } = await supabase.from("users").upsert([
-        {
-          phone_number: phoneNumber,
-          phone_verified: true,
-        },
-      ], { onConflict: "phone_number" });
-
-      if (upsertError) {
-        return res.status(500).json({ success: false, error: "Failed to update user verification status" });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Verification error:", error);
-      res.status(500).json({ success: false, error: "Verification failed" });
     }
   })
 );
