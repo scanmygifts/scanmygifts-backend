@@ -12,4 +12,4 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
-export { router as healthRouter };
+export default router;
