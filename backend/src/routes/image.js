@@ -42,12 +42,6 @@ router.post('/analyze', asyncHandler(async (req, res) => {
 
   const description = response.choices[0]?.message?.content || 'Unable to analyze image';
   res.json({ description });
-
-  router.get("/", (req, res) => {
-  res.json({ success: true, message: "Verification route is working!" });
-
-});
-
 }));
 
 export { router as imageRouter };
