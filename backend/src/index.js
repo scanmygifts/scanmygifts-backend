@@ -7,6 +7,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs';
+import path from 'path';
 import { createClient } from "@supabase/supabase-js";
 
 // Load environment variables
@@ -54,22 +55,29 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Verify Route Files Exist Before Using
-const checkRouteFile = (path) => fs.existsSync(path);
+// Function to Check If Route File Exists Before Using
+const checkAndUseRoute = (routePath, routeImport, routeUrl) => {
+    if (fs.existsSync(path.resolve(routePath))) {
+        import(routeImport).then((module) => {
+            app.use(routeUrl, module.default || module);
+            console.log(`✅ Loaded route: ${routeUrl}`);
+        }).catch((err) => {
+            console.error(`❌ Failed to load route ${routeUrl}:`, err);
+        });
+    } else {
+        console.warn(`⚠️ Route file missing: ${routePath} - Skipping ${routeUrl}`);
+    }
+};
 
-// Load Routes Only If They Exist
-if (checkRouteFile('./routes/image.js')) {
-    const { imageRouter } = await import('./routes/image.js');
-    app.use('/api/image', imageRouter);
-}
-if (checkRouteFile('./routes/health.js')) {
-    const { healthRouter } = await import('./routes/health.js');
-    app.use('/api/health', healthRouter);
-}
-if (checkRouteFile('./routes/verification.js')) {
-    const { verificationRouter } = await import('./routes/verification.js');
-    app.use('/api/verification', verificationRouter);
-}
+// Load Routes
+checkAndUseRoute('./routes/image.js', './routes/image.js', '/api/image');
+checkAndUseRoute('./routes/health.js', './routes/health.js', '/api/health');
+checkAndUseRoute('./routes/verification.js', './routes/verification.js', '/api/verification');
+
+// Root Route to Confirm Server is Running
+app.get('/', (req, res) => {
+  res.send('✅ Backend is running.');
+});
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
