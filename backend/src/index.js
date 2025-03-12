@@ -30,11 +30,22 @@ app.set('trust proxy', 1);
 
 // Security Middleware
 app.use(helmet());
+const allowedOrigins = [
+  "http://localhost:5173", // ✅ Allow local development frontend
+  "https://your-frontend-site.netlify.app" // ✅ Replace with your actual deployed frontend URL
+];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || ['https://your-frontend-url.netlify.app'], // ✅ Ensure CORS allows Render & Netlify
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed from this origin: " + origin));
+    }
+  },
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
 
 // Rate Limiting
