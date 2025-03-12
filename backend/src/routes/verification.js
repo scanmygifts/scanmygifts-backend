@@ -16,6 +16,11 @@ const verifyCodeSchema = z.object({
   code: z.string().length(6),
 });
 
+const createUserSchema = z.object({
+  phoneNumber: z.string().min(10).max(15),
+  firstName: z.string().min(1),
+});
+
 // Initialize Twilio client
 const initTwilioClient = () => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -39,17 +44,14 @@ router.post(
     const isDevelopment = process.env.NODE_ENV === "development";
 
     try {
-      // ✅ Delete any existing verification codes for this phone number
-      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
       // ✅ Store new verification code in Supabase
-      const { error: dbError } = await supabase.from("verification_codes").insert([
+      const { error: dbError } = await supabase.from("verification_codes").upsert([
         {
           phone_number: phoneNumber,
-          code: verificationCode,
+          otp_code: verificationCode,
           expires_at: expiresAt,
         },
-      ]);
+      ], { onConflict: "phone_number" });
 
       if (dbError) {
         console.error("Database error:", dbError);
@@ -103,7 +105,7 @@ router.post(
   })
 );
 
-// **✅ Verify OTP (Only Marks Success, No User Insert Yet)**
+// **✅ Verify OTP Only**
 router.post(
   "/verify",
   asyncHandler(async (req, res) => {
@@ -115,7 +117,7 @@ router.post(
         .from("verification_codes")
         .select("*")
         .eq("phone_number", phoneNumber)
-        .eq("code", code)
+        .eq("otp_code", code)
         .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is not expired
         .maybeSingle();
 
@@ -139,17 +141,49 @@ router.post(
         .from("verification_codes")
         .delete()
         .eq("phone_number", phoneNumber)
-        .eq("code", code);
+        .eq("otp_code", code);
 
-      // ✅ Step 3: Return success response (User creation happens later when name is provided)
-      res.json({
-        success: true,
-      });
+      // ✅ Return success response
+      res.json({ success: true });
     } catch (error) {
       console.error("Verification error:", error);
       res.status(500).json({
         success: false,
         error: process.env.NODE_ENV === "development" ? error.message : "Verification failed",
+      });
+    }
+  })
+);
+
+// **✅ Create User After Verification and First Name Input**
+router.post(
+  "/create-user",
+  asyncHandler(async (req, res) => {
+    const { phoneNumber, firstName } = createUserSchema.parse(req.body);
+
+    try {
+      const { error: insertError } = await supabase.from("users").insert([
+        {
+          phone_number: phoneNumber,
+          first_name: firstName,
+          phone_verified: true,
+        },
+      ]);
+
+      if (insertError) {
+        console.error("User insert error:", insertError);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to create user",
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("User creation error:", error);
+      res.status(500).json({
+        success: false,
+        error: "User creation failed",
       });
     }
   })
