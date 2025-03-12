@@ -3,6 +3,10 @@ import asyncHandler from 'express-async-handler';
 
 const router = express.Router();
 
+router.get("/", (req, res) => {
+  res.json({ success: true, message: "Verification route is working!" });
+});
+
 router.get('/', asyncHandler(async (req, res) => {
   res.json({
     status: 'healthy',
