@@ -6,10 +6,6 @@ import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  res.json({ success: true, message: "Verification route is working!" });
-});
-
 // Validation schemas
 const sendCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15)
@@ -22,17 +18,15 @@ const verifyCodeSchema = z.object({
 
 // Initialize Twilio client
 const initTwilioClient = () => {
-  if (
-    process.env.TWILIO_ACCOUNT_SID?.startsWith('AC') &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_PHONE_NUMBER
-  ) {
-    return twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  
+  if (!accountSid?.startsWith('AC') || !authToken || !process.env.TWILIO_PHONE_NUMBER) {
+    console.warn('Twilio credentials not properly configured');
+    return null;
   }
-  return null;
+  
+  return twilio(accountSid, authToken);
 };
 
 // Send verification code
@@ -40,10 +34,14 @@ router.post('/send', asyncHandler(async (req, res) => {
   const { phoneNumber } = sendCodeSchema.parse(req.body);
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
   const isDevelopment = process.env.NODE_ENV === 'development';
-
-  console.log(`📲 Sending verification code to ${phoneNumber}`);
-
+  
   try {
+    // Delete any existing verification codes for this phone number
+    await supabase
+      .from('verification_codes')
+      .delete()
+      .eq('phone_number', phoneNumber);
+
     // Store verification code in Supabase
     const { error: dbError } = await supabase
       .from('verification_codes')
@@ -53,10 +51,17 @@ router.post('/send', asyncHandler(async (req, res) => {
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes expiration
       }]);
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error('Database error:', dbError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to store verification code' 
+      });
+    }
 
+    // In development, return the code directly
     if (isDevelopment) {
-      console.log(`🛠️ Development mode: Returning code ${verificationCode}`);
+      console.log(`Development mode - Verification code for ${phoneNumber}: ${verificationCode}`);
       return res.json({ 
         success: true, 
         code: verificationCode,
@@ -67,23 +72,32 @@ router.post('/send', asyncHandler(async (req, res) => {
     // In production, send SMS via Twilio
     const twilioClient = initTwilioClient();
     if (!twilioClient) {
-      console.error('🚨 Twilio configuration missing');
-      return res.status(500).json({ error: 'Twilio not configured' });
+      return res.status(503).json({ 
+        success: false, 
+        error: 'SMS service not available' 
+      });
     }
 
-    await twilioClient.messages.create({
-      body: `Your ScanMyGifts verification code is: ${verificationCode}`,
-      to: phoneNumber,
-      from: process.env.TWILIO_PHONE_NUMBER
-    });
+    try {
+      await twilioClient.messages.create({
+        body: `Your ScanMyGifts verification code is: ${verificationCode}`,
+        to: phoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER
+      });
 
-    console.log(`✅ Verification code sent to ${phoneNumber}`);
-    res.json({ success: true });
+      res.json({ success: true });
+    } catch (twilioError) {
+      console.error('Twilio error:', twilioError);
+      res.status(400).json({ 
+        success: false, 
+        error: twilioError.message || 'Failed to send SMS'
+      });
+    }
   } catch (error) {
-    console.error('❌ Verification error:', error);
+    console.error('Verification error:', error);
     res.status(500).json({ 
-      error: 'Failed to send verification code',
-      details: isDevelopment ? error.message : undefined
+      success: false,
+      error: isDevelopment ? error.message : 'Failed to send verification code'
     });
   }
 }));
@@ -91,48 +105,59 @@ router.post('/send', asyncHandler(async (req, res) => {
 // Verify code
 router.post('/verify', asyncHandler(async (req, res) => {
   const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
-
-  console.log(`🔍 Verifying code for ${phoneNumber}`);
-
+  
   try {
-    const { data, error } = await supabase
+    // Check for valid verification code
+    const { data: verificationData, error: verificationError } = await supabase
       .from('verification_codes')
       .select('*')
       .eq('phone_number', phoneNumber)
       .eq('code', code)
-      .gte('expires_at', new Date().toISOString()) // Ensure the code isn't expired
-      .single();
+      .gte('expires_at', new Date().toISOString())
+      .maybeSingle();
 
-    if (error) {
-      console.error('⚠️ Database error during verification:', error);
-      throw error;
+    if (verificationError) {
+      console.error('Verification query error:', verificationError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to verify code' 
+      });
     }
 
-    if (!data) {
-      console.warn(`⚠️ Invalid or expired code for ${phoneNumber}`);
+    if (!verificationData) {
       return res.status(400).json({ 
+        success: false,
         error: 'Invalid or expired verification code' 
       });
     }
 
     // Delete the used code
-    const { error: deleteError } = await supabase
+    await supabase
       .from('verification_codes')
       .delete()
       .eq('phone_number', phoneNumber)
       .eq('code', code);
 
-    if (deleteError) {
-      console.error('⚠️ Error deleting used verification code:', deleteError);
+    // Check if user exists
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('first_name')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
+
+    if (userError) {
+      console.error('User query error:', userError);
     }
 
-    console.log(`✅ Verification successful for ${phoneNumber}`);
-    res.json({ success: true });
+    res.json({ 
+      success: true,
+      user: userData || null
+    });
   } catch (error) {
-    console.error('❌ Verification failed:', error);
+    console.error('Verification error:', error);
     res.status(500).json({ 
-      error: 'Verification failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      success: false,
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Verification failed'
     });
   }
 }));
