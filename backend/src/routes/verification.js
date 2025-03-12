@@ -162,4 +162,4 @@ router.post('/verify', asyncHandler(async (req, res) => {
   }
 }));
 
-export { router as verificationRouter };
+export default router;;
