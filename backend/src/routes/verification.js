@@ -11,6 +11,12 @@ const sendCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
 });
 
+// Validation schema for verifying verification code
+const verifyCodeSchema = z.object({
+  phoneNumber: z.string().min(10).max(15),
+  code: z.string().length(6),
+});
+
 // Initialize Twilio client
 const initTwilioClient = () => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
