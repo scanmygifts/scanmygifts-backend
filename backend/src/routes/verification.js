@@ -105,6 +105,34 @@ router.post(
       // ✅ Step 2: Delete OTP after successful verification
       await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
+      // ✅ Step 3: Check if User Already Exists
+      const { data: existingUser, error: userFetchError } = await adminSupabase
+        .from("users")
+        .select("id")
+        .eq("phone_number", phoneNumber)
+        .maybeSingle();
+
+      if (userFetchError) {
+        console.error("❌ Error checking existing user:", userFetchError);
+        return res.status(500).json({ success: false, error: "Database error while checking user" });
+      }
+
+      if (!existingUser) {
+        // ✅ Step 4: Insert New User if Not Exists
+        const { error: insertError } = await adminSupabase.from("users").insert([
+          { phone_number: phoneNumber }
+        ]);
+
+        if (insertError) {
+          console.error("❌ Insert Error:", insertError);
+          return res.status(500).json({ success: false, error: "Failed to create user" });
+        }
+
+        console.log("✅ New user inserted:", phoneNumber);
+      } else {
+        console.log("✅ User already exists:", phoneNumber);
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error("❌ Verification error:", error);
