@@ -97,25 +97,25 @@ router.post("/verify", asyncHandler(async (req, res) => {
     // ✅ Step 2: Delete OTP after successful verification
     await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
-    // ✅ Step 3: Upsert user record to mark as verified
-    const upsertResponse = await supabase.from("users").upsert(
-      [{ phone_number: phoneNumber, phone_verified: true }],
-      { onConflict: "phone_number" }
-    );
+  //   // ✅ Step 3: Upsert user record to mark as verified
+  //   const upsertResponse = await supabase.from("users").upsert(
+  //     [{ phone_number: phoneNumber, phone_verified: true }],
+  //     { onConflict: "phone_number" }
+  //   );
 
-    console.log("🛠️ Upsert Response:", upsertResponse);
+  //   console.log("🛠️ Upsert Response:", upsertResponse);
 
-    if (upsertResponse.error) {
-      console.error("❌ Upsert Error:", upsertResponse.error);
-      return res.status(500).json({ success: false, error: "Failed to update user verification status" });
-    }
+  //   if (upsertResponse.error) {
+  //     console.error("❌ Upsert Error:", upsertResponse.error);
+  //     return res.status(500).json({ success: false, error: "Failed to update user verification status" });
+  //   }
 
-    res.json({ success: true });
+  //   res.json({ success: true });
 
-  } catch (error) {
-    console.error("❌ Verification error:", error);
-    res.status(500).json({ success: false, error: "Verification failed" });
-  }
+  // } catch (error) {
+  //   console.error("❌ Verification error:", error);
+  //   res.status(500).json({ success: false, error: "Verification failed" });
+  // }
 }));
 
 export default router;
