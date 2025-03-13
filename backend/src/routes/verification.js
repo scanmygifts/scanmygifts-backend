@@ -91,7 +91,7 @@ router.post("/verify", asyncHandler(async (req, res) => {
     // ✅ Step 3: Upsert user record with `phone_verified`
     const { error: upsertError } = await supabase.from("users").upsert(
       [{ phone_number: phoneNumber, phone_verified: true }],
-      { onConflict: "phone_number" onConflict: ["phone_number", "phone_verified"] }
+      { onConflict: ["phone_number", "phone_verified"] }
     );
 
     if (upsertError) {
