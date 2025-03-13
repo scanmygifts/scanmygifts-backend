@@ -89,11 +89,12 @@ router.post("/verify", asyncHandler(async (req, res) => {
     await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
     // ✅ Step 3: Upsert user record with `phone_verified`
-    const { error: upsertError } = await supabase.from("users").upsert(
+    const { data, error } = await supabase.from("users").upsert(
       [{ phone_number: phoneNumber, phone_verified: true }],
-      { onConflict: ["phone_number"] }
-    );
-
+      { onConflict: "phone_number" } // ✅ Only use `phone_number` for conflict resolution
+      );
+    console.log("Upsert Response:", { data, error }); // ✅ Debugging
+    
     if (upsertError) {
       return res.status(500).json({ success: false, error: "Failed to update user verification status" });
     }
