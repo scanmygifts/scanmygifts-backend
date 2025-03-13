@@ -1,8 +1,9 @@
+import { createClient } from "@supabase/supabase-js";
 import express from "express";
 import { z } from "zod";
 import twilio from "twilio";
 import asyncHandler from "express-async-handler";
-import { supabase } from "../lib/supabase.js";
+// import { supabase } from "../lib/supabase.js";
 
 const router = express.Router();
 
@@ -106,6 +107,12 @@ router.post(
       await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
       // ✅ Step 3: Check if User Already Exists
+      
+      const adminSupabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY // ✅ Use the service role key
+      );
+
       const { data: existingUser, error: userFetchError } = await adminSupabase
         .from("users")
         .select("id")
