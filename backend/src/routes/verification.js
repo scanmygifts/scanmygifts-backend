@@ -1,17 +1,17 @@
-import { createClient } from "@supabase/supabase-js";
+// import { createClient } from "@supabase/supabase-js";
 import express from "express";
 import { z } from "zod";
 import twilio from "twilio";
 import asyncHandler from "express-async-handler";
-// import { supabase } from "../lib/supabase.js";
+import { supabase } from "../lib/supabase.js";
 
 const router = express.Router();
 
-// Initialize supabase;
-const adminSupabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY // ✅ Use the service role key
-);
+// // Initialize supabase;
+// const adminSupabase = createClient(
+//   process.env.SUPABASE_URL,
+//   process.env.SUPABASE_KEY // ✅ Use the service role key
+// );
 
 
 // Validation schema for sending verification code
