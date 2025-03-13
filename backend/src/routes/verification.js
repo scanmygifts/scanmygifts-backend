@@ -145,4 +145,49 @@ router.post(
   })
 );
 
+// ✅ Update User First Name (Assumes User Already Exists)
+router.post("/update-user", asyncHandler(async (req, res) => {
+  const { phoneNumber, firstName } = req.body;
+  console.log("📥 Received update request:", { phoneNumber, firstName });
+
+  try {
+    // ✅ Check if user already has a first_name
+    const { data: existingUser, error: fetchError } = await supabase
+      .from("users")
+      .select("first_name")
+      .eq("phone_number", phoneNumber)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error("❌ Error fetching user:", fetchError);
+      return res.status(500).json({ success: false, error: "Database error while checking user" });
+    }
+
+    console.log("🔎 User lookup result:", existingUser);
+
+    const isNewUser = !existingUser?.first_name;
+    
+    console.log(`📌 ${isNewUser ? "New user - setting first name" : "Returning user - updating first name"}`);
+
+    // ✅ Update first name
+    const { error } = await supabase
+      .from("users")
+      .update({ first_name: firstName })
+      .eq("phone_number", phoneNumber);
+
+    if (error) {
+      console.error("❌ Update Error:", error);
+      return res.status(500).json({ success: false, error: "Failed to update user profile" });
+    }
+
+    console.log("✅ First name updated successfully:", firstName);
+
+    res.json({ success: true, newUser: isNewUser });
+
+  } catch (error) {
+    console.error("❌ User Update Error:", error);
+    res.status(500).json({ success: false, error: "User update failed" });
+    }
+  })
+);
 export default router;
