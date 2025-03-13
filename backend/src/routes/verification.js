@@ -1,4 +1,3 @@
-// import { createClient } from "@supabase/supabase-js";
 import express from "express";
 import { z } from "zod";
 import twilio from "twilio";
@@ -6,13 +5,6 @@ import asyncHandler from "express-async-handler";
 import { supabase } from "../lib/supabase.js";
 
 const router = express.Router();
-
-// // Initialize supabase;
-// const adminSupabase = createClient(
-//   process.env.SUPABASE_URL,
-//   process.env.SUPABASE_KEY // ✅ Use the service role key
-// );
-
 
 // Validation schema for sending verification code
 const sendCodeSchema = z.object({
@@ -47,9 +39,6 @@ router.post(
     const expiresAt = new Date(Date.now() + 60 * 1000).toISOString(); // ⏳ 60s expiration
 
     try {
-      // ✅ Delete existing OTPs for the phone number before inserting a new one
-      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
       // ✅ Store new OTP in Supabase
       const { error: insertError } = await supabase.from("verification_codes").insert([
         {
@@ -110,11 +99,8 @@ router.post(
 
       console.log("✅ OTP matched successfully for:", phoneNumber);
 
-      // ✅ Step 2: Delete OTP after successful verification
-      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
-      // ✅ Step 3: Check if User Already Exists
-      const { data: existingUser, error: userFetchError } = await adminSupabase
+      // ✅ Step 2: Check if User Already Exists
+      const { data: existingUser, error: userFetchError } = await supabase
         .from("users")
         .select("id")
         .eq("phone_number", phoneNumber)
@@ -126,8 +112,8 @@ router.post(
       }
 
       if (!existingUser) {
-        // ✅ Step 4: Insert New User if Not Exists
-        const { error: insertError } = await adminSupabase.from("users").insert([
+        // ✅ Step 3: Insert New User if Not Exists
+        const { error: insertError } = await supabase.from("users").insert([
           { phone_number: phoneNumber }
         ]);
 
@@ -140,6 +126,16 @@ router.post(
       } else {
         console.log("✅ User already exists:", phoneNumber);
       }
+
+      // ✅ Step 4: NOW delete the OTP record **after** successful user verification
+      const { error: otpDeleteError } = await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
+
+      if (otpDeleteError) {
+        console.error("❌ Error deleting OTP:", otpDeleteError);
+        return res.status(500).json({ success: false, error: "Failed to delete OTP" });
+      }
+
+      console.log("✅ OTP deleted successfully for:", phoneNumber);
 
       res.json({ success: true });
     } catch (error) {
