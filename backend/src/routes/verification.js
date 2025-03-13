@@ -31,91 +31,86 @@ const initTwilioClient = () => {
 };
 
 // **✅ Send Verification Code**
-router.post("/send", asyncHandler(async (req, res) => {
-  const { phoneNumber } = sendCodeSchema.parse(req.body);
-  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 60 * 1000).toISOString(); // ⏳ 60s expiration
+router.post(
+  "/send",
+  asyncHandler(async (req, res) => {
+    const { phoneNumber } = sendCodeSchema.parse(req.body);
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 60 * 1000).toISOString(); // ⏳ 60s expiration
 
-  try {
-    // ✅ Delete existing OTPs for the phone number before inserting a new one
-    await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
+    try {
+      // ✅ Delete existing OTPs for the phone number before inserting a new one
+      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
-    // ✅ Store new OTP in Supabase
-    const { error: insertError } = await supabase.from("verification_codes").insert([
-      { phone_number: phoneNumber, otp_code: verificationCode, expires_at: expiresAt, created_at: new Date().toISOString() }
-    ]);
+      // ✅ Store new OTP in Supabase
+      const { error: insertError } = await supabase.from("verification_codes").insert([
+        {
+          phone_number: phoneNumber,
+          otp_code: verificationCode,
+          expires_at: expiresAt,
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
-    if (insertError) {
-      console.error("❌ Supabase Insert Error:", insertError);
-      return res.status(500).json({ success: false, error: "Failed to store verification code" });
+      if (insertError) {
+        console.error("❌ Supabase Insert Error:", insertError);
+        return res.status(500).json({ success: false, error: "Failed to store verification code" });
+      }
+
+      // ✅ Send OTP via Twilio
+      const twilioClient = initTwilioClient();
+      await twilioClient.messages.create({
+        body: `Your OTP is: ${verificationCode}. Expires in 60s.`,
+        to: phoneNumber,
+        from: process.env.TWILIO_PHONE_NUMBER,
+      });
+
+      res.json({ success: true, message: "OTP sent successfully!" });
+    } catch (error) {
+      console.error("❌ Verification Error:", error);
+      res.status(500).json({ success: false, error: "Failed to send OTP", details: error.message });
     }
-
-    // ✅ Send OTP via Twilio
-    const twilioClient = initTwilioClient();
-    await twilioClient.messages.create({
-      body: `Your OTP is: ${verificationCode}. Expires in 60s.`,
-      to: phoneNumber,
-      from: process.env.TWILIO_PHONE_NUMBER,
-    });
-
-    res.json({ success: true, message: "OTP sent successfully!" });
-
-  } catch (error) {
-    console.error("❌ Verification Error:", error);
-    res.status(500).json({ success: false, error: "Failed to send OTP", details: error.message });
-  }
-}));
-
+  })
+);
 
 // **✅ Verify the Verification Code**
-router.post("/verify", asyncHandler(async (req, res) => {
-  const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
+router.post(
+  "/verify",
+  asyncHandler(async (req, res) => {
+    const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
 
-  try {
-    console.log("📥 Received OTP verification request:", { phoneNumber, code });
+    try {
+      console.log("📥 Received OTP verification request:", { phoneNumber, code });
 
-    // ✅ Step 1: Retrieve OTP from `verification_codes` Table
-    const { data: verificationData, error: verificationError } = await supabase
-      .from("verification_codes")
-      .select("*")
-      .eq("phone_number", phoneNumber)
-      .eq("otp_code", code)
-      .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is still valid
-      .maybeSingle();
+      // ✅ Step 1: Retrieve OTP from `verification_codes` Table
+      const { data: verificationData, error: verificationError } = await supabase
+        .from("verification_codes")
+        .select("*")
+        .eq("phone_number", phoneNumber)
+        .eq("otp_code", code)
+        .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is still valid
+        .maybeSingle();
 
-    if (verificationError) {
-      console.error("❌ Error fetching OTP:", verificationError);
-      return res.status(500).json({ success: false, error: "Database error while verifying OTP" });
+      if (verificationError) {
+        console.error("❌ Error fetching OTP:", verificationError);
+        return res.status(500).json({ success: false, error: "Database error while verifying OTP" });
+      }
+
+      if (!verificationData) {
+        return res.status(400).json({ success: false, error: "Invalid or expired OTP" });
+      }
+
+      console.log("✅ OTP matched successfully for:", phoneNumber);
+
+      // ✅ Step 2: Delete OTP after successful verification
+      await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("❌ Verification error:", error);
+      res.status(500).json({ success: false, error: "Verification failed" });
     }
-
-    if (!verificationData) {
-      return res.status(400).json({ success: false, error: "Invalid or expired OTP" });
-    }
-
-    console.log("✅ OTP matched successfully for:", phoneNumber);
-
-    // ✅ Step 2: Delete OTP after successful verification
-    await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
-
-  //   // ✅ Step 3: Upsert user record to mark as verified
-  //   const upsertResponse = await supabase.from("users").upsert(
-  //     [{ phone_number: phoneNumber, phone_verified: true }],
-  //     { onConflict: "phone_number" }
-  //   );
-
-  //   console.log("🛠️ Upsert Response:", upsertResponse);
-
-  //   if (upsertResponse.error) {
-  //     console.error("❌ Upsert Error:", upsertResponse.error);
-  //     return res.status(500).json({ success: false, error: "Failed to update user verification status" });
-  //   }
-
-  //   res.json({ success: true });
-
-  // } catch (error) {
-  //   console.error("❌ Verification error:", error);
-  //   res.status(500).json({ success: false, error: "Verification failed" });
-  }
-}));
+  })
+);
 
 export default router;
