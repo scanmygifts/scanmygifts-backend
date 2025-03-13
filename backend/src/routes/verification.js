@@ -115,7 +115,7 @@ router.post("/verify", asyncHandler(async (req, res) => {
   // } catch (error) {
   //   console.error("❌ Verification error:", error);
   //   res.status(500).json({ success: false, error: "Verification failed" });
-  // }
+  }
 }));
 
 export default router;
