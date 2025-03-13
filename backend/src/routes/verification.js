@@ -72,36 +72,48 @@ router.post("/verify", asyncHandler(async (req, res) => {
   const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
 
   try {
-    // ✅ Step 1: Check for valid OTP
+    console.log("📥 Received OTP verification request:", { phoneNumber, code });
+
+    // ✅ Step 1: Retrieve OTP from `verification_codes` Table
     const { data: verificationData, error: verificationError } = await supabase
       .from("verification_codes")
       .select("*")
       .eq("phone_number", phoneNumber)
       .eq("otp_code", code)
-      .gte("expires_at", new Date().toISOString()) // ✅ OTP should not be expired
+      .gte("expires_at", new Date().toISOString()) // ✅ Ensure OTP is still valid
       .maybeSingle();
 
-    if (verificationError || !verificationData) {
-      return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
+    if (verificationError) {
+      console.error("❌ Error fetching OTP:", verificationError);
+      return res.status(500).json({ success: false, error: "Database error while verifying OTP" });
     }
+
+    if (!verificationData) {
+      return res.status(400).json({ success: false, error: "Invalid or expired OTP" });
+    }
+
+    console.log("✅ OTP matched successfully for:", phoneNumber);
 
     // ✅ Step 2: Delete OTP after successful verification
     await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
-    // ✅ Step 3: Upsert user record with `phone_verified`
-    const { data, error } = await supabase.from("users").upsert(
+    // ✅ Step 3: Upsert user record to mark as verified
+    const upsertResponse = await supabase.from("users").upsert(
       [{ phone_number: phoneNumber, phone_verified: true }],
-      { onConflict: "phone_number" } // ✅ Only use `phone_number` for conflict resolution
-      );
-    console.log("Upsert Response:", upsertResponse); // ✅ Debugging
+      { onConflict: "phone_number" }
+    );
 
-    if (upsertResponse.error) { // ✅ Check for error properly
-      throw new Error("Failed to update user verification status: " + upsertResponse.error.message);
+    console.log("🛠️ Upsert Response:", upsertResponse);
+
+    if (upsertResponse.error) {
+      console.error("❌ Upsert Error:", upsertResponse.error);
+      return res.status(500).json({ success: false, error: "Failed to update user verification status" });
     }
 
     res.json({ success: true });
+
   } catch (error) {
-    console.error("Verification error:", error);
+    console.error("❌ Verification error:", error);
     res.status(500).json({ success: false, error: "Verification failed" });
   }
 }));
