@@ -60,4 +60,43 @@ router.post("/send", asyncHandler(async (req, res) => {
   }
 }));
 
+
+// **✅ Verify the Verification Code**
+router.post("/verify", asyncHandler(async (req, res) => {
+  const { phoneNumber, code } = verifyCodeSchema.parse(req.body);
+
+  try {
+    // ✅ Step 1: Check for valid OTP
+    const { data: verificationData, error: verificationError } = await supabase
+      .from("verification_codes")
+      .select("*")
+      .eq("phone_number", phoneNumber)
+      .eq("otp_code", code)
+      .gte("expires_at", new Date().toISOString()) // ✅ OTP should not be expired
+      .maybeSingle();
+
+    if (verificationError || !verificationData) {
+      return res.status(400).json({ success: false, error: "Invalid or expired verification code" });
+    }
+
+    // ✅ Step 2: Delete OTP after successful verification
+    await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
+
+    // ✅ Step 3: Upsert user record with `phone_verified`
+    const { error: upsertError } = await supabase.from("users").upsert(
+      [{ phone_number: phoneNumber, phone_verified: true }],
+      { onConflict: "phone_number" }
+    );
+
+    if (upsertError) {
+      return res.status(500).json({ success: false, error: "Failed to update user verification status" });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Verification error:", error);
+    res.status(500).json({ success: false, error: "Verification failed" });
+  }
+}));
+
 export default router;
