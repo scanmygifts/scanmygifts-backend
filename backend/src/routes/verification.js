@@ -7,6 +7,13 @@ import asyncHandler from "express-async-handler";
 
 const router = express.Router();
 
+// Initialize supabase;
+const adminSupabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY // ✅ Use the service role key
+);
+
+
 // Validation schema for sending verification code
 const sendCodeSchema = z.object({
   phoneNumber: z.string().min(10).max(15),
@@ -107,12 +114,6 @@ router.post(
       await supabase.from("verification_codes").delete().eq("phone_number", phoneNumber);
 
       // ✅ Step 3: Check if User Already Exists
-      
-      const adminSupabase = createClient(
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY // ✅ Use the service role key
-      );
-
       const { data: existingUser, error: userFetchError } = await adminSupabase
         .from("users")
         .select("id")
